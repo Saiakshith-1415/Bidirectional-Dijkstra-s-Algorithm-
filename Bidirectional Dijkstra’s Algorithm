@@ -1,0 +1,152 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <stdbool.h>
+
+typedef struct Edge {
+    int to, w;
+    struct Edge* next;
+} Edge;
+
+typedef struct {
+    Edge** adj;
+    int n;
+} Graph;
+
+Graph* createGraph(int n) {
+    Graph* g = malloc(sizeof(Graph));
+    g->n = n;
+    g->adj = calloc(n, sizeof(Edge*));
+    return g;
+}
+
+void addEdge (Graph* g, int u, int v, int w) {
+    Edge* e = malloc(sizeof(Edge));
+    e->to = v; e->w = w; e->next = g->adj[u];
+    g->adj[u] = e;
+}
+
+void freeGraph(Graph* g) {
+    for (int i=0; i < g->n; i++) {
+        for (Edge* e = g->adj[i]; e; ) {
+            Edge* t = e; e = e->next; free(t);
+        }
+    }
+    free(g->adj); free(g);
+}
+
+typedef struct {
+    int *v, *d, *pos, size;
+} Heap;
+
+Heap* newHeap(int n) {
+    Heap* h = malloc(sizeof(Heap));
+    h->v = malloc(n * sizeof(int));
+    h->d = malloc(n * sizeof(int));
+    h->pos = malloc(n * sizeof(int));
+    for (int i=0; i < n; i++) h->pos[i] = -1;
+    h->size = 0; return h;
+}
+
+void swap (Heap* h, int i, int j) {
+    int tv = h->v[i], td = h->d[i];
+    h->v[i] = h->v[j]; h->d[i] = h->d[j];
+    h->v[j] = tv; h->d[j] = td;
+    h->pos[h->v[i]] = i; h->pos[h->v[j]] = j;
+}
+
+void up (Heap* h, int i) {
+    while (i && h->d[(i-1)/2] > h->d[i]) { swap(h, i, (i-1)/2); i = (i-1)/2; }
+}
+
+void down (Heap* h, int i) {
+    int l = 2*i+1, r = 2*i+2, s = i;
+    if (l < h->size && h->d[l] < h->d[s]) s = l;
+    if (r < h->size && h->d[r] < h->d[s]) s = r;
+    if (s != i) { swap(h, i, s); down(h, s); }
+}
+
+void insert(Heap* h, int v, int d) {
+    if (h->pos[v] != -1) {
+        int i = h->pos[v];
+        if (d < h->d[i]) { h->d[i] = d; up(h, i); }
+        return;
+    }
+    int i = h->size++;
+    h->v[i] = v; h->d[i] = d; h->pos[v] = i; up(h, i);
+}
+
+int extract (Heap* h) {
+    if (!h->size) return -1;
+    int v = h->v[0]; h->pos[v] = -1;
+    h->v[0] = h->v[--h->size];
+    h->d[0] = h->d[h->size];
+    if (h->size) { h->pos[h->v[0]] = 0; down(h, 0); }
+    return v;
+}
+
+int bidij (Graph* g, Graph* rg, int s, int t) {
+    if (s == t) return 0;
+    int n = g->n, *df = malloc(n*sizeof(int)), *db = malloc(n*sizeof(int));
+    bool *vf = calloc(n,sizeof(bool)), *vb = calloc(n,sizeof(bool));
+
+    for (int i=0; i < n; i++) df[i] = db[i] = INT_MAX;
+    Heap *hf = newHeap(n), *hb = newHeap(n);
+
+    df[s] = db[t] = 0; insert(hf,s,0); insert(hb,t,0);
+    int best = INT_MAX;
+
+    while (hf->size || hb->size) {
+
+        // Forward Step
+        int u = extract(hf);
+        if (u != -1 && !vf[u]) {
+            vf[u] = true;
+            if (vb[u]) best = df[u] + db[u] < best ? df[u] + db[u] : best;
+            for (Edge* e = g->adj[u]; e; e = e->next)
+                if (!vf[e->to] && df[e->to] > df[u] + e->w) {
+                    df[e->to] = df[u] + e->w; insert(hf, e->to, df[e->to]);
+                }
+        }
+
+        // Backward Step
+        u = extract(hb);
+        if (u != -1 && !vb[u]) {
+            vb[u] = true;
+            if (vf[u]) best = df[u] + db[u] < best ? df[u] + db[u] : best;
+            for (Edge* e = rg->adj[u]; e; e = e->next)
+                if (!vb[e->to] && db[e->to] > db[u] + e->w) {
+                    db[e->to] = db[u] + e->w; insert(hb, e->to, db[e->to]);
+                }
+        }
+
+        int mf = hf->size ? hf->d[0] : INT_MAX;
+        int mb = hb->size ? hb->d[0] : INT_MAX;
+
+        if (mf + mb >= best) break;
+    }
+    
+    free(df); free(db); free(vf); free(vb);
+    return best == INT_MAX ? -1 : best;
+}
+
+int main() {
+    int n = 7;
+    Graph *g = createGraph(n), *rg = createGraph(n);
+    int edges[][3] = {
+        {0,1,2},{0,2,4},{1,2,1},{1,3,7},{2,4,3},
+        {4,3,2},{3,5,1},{4,6,5},{5,6,2}
+    };
+    
+    for (int i=0;i<9;i++){ 
+        addEdge(g, edges[i][0], edges[i][1], edges[i][2]);
+        addEdge(rg, edges[i][1], edges[i][0], edges[i][2]); 
+    }
+    
+    int s=0, t=6;
+    
+    int d = bidij(g, rg, s, t);
+    
+    printf(d == -1 ? "No path\n" : "Shortest distance %d\n", d);
+    freeGraph(g); freeGraph(rg);
+}
